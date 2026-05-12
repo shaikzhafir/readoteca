@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Address               string
 	DatabasePath          string
+	DistPath              string
 	SchemaPath            string
 	AutoMigrate           bool
 	FrontendURL           string
@@ -57,6 +58,7 @@ func Load() (Config, error) {
 	return Config{
 		Address:               address,
 		DatabasePath:          getenv("DATABASE_PATH", "books.db"),
+		DistPath:              getenv("DIST_PATH", "../frontend/dist"),
 		SchemaPath:            getenv("SCHEMA_PATH", "schema.sql"),
 		AutoMigrate:           autoMigrate,
 		FrontendURL:           strings.TrimRight(frontendURL, "/"),
