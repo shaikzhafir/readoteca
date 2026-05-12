@@ -8,6 +8,7 @@ backend/*.db
 
 # Design screenshots
 *.png
+!frontend/public/*.png
 
 # AI/dev planning docs
 DESIGN.md
