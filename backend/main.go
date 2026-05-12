@@ -51,8 +51,8 @@ func main() {
 	api.HandlerFromMux(strict, mux)
 	mux.HandleFunc("/", spaHandler("../frontend/dist"))
 
-	fmt.Println("Server running at http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", handlers.WithCORS(mux, cfg)))
+	fmt.Printf("Server running at %s\n", cfg.Address)
+	log.Fatal(http.ListenAndServe(cfg.Address, handlers.WithCORS(mux, cfg)))
 }
 
 func runSchema(conn *sql.DB, schemaPath string) error {

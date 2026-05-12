@@ -16,6 +16,7 @@ import (
 	"readoteca/auth"
 	"readoteca/config"
 	"readoteca/db"
+	log "readoteca/logging"
 	"readoteca/pkg/googlebooks"
 
 	"github.com/oapi-codegen/runtime/types"
@@ -59,7 +60,15 @@ func NewServer(cfg config.Config, store *db.Queries, catalog Catalog) (*Server, 
 func RequestContextMiddleware(f api.StrictHandlerFunc, operationID string) api.StrictHandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		ctx = context.WithValue(ctx, requestContextKey{}, r)
-		return f(ctx, w, r, request)
+		start := time.Now()
+		log.Info("request start op=%s method=%s path=%s remote=%s", operationID, r.Method, r.URL.Path, r.RemoteAddr)
+		resp, err := f(ctx, w, r, request)
+		if err != nil {
+			log.Error("request error op=%s method=%s path=%s duration=%s err=%v", operationID, r.Method, r.URL.Path, time.Since(start), err)
+		} else {
+			log.Info("request done op=%s method=%s path=%s duration=%s", operationID, r.Method, r.URL.Path, time.Since(start))
+		}
+		return resp, err
 	}
 }
 

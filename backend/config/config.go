@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	Address               string
 	DatabasePath          string
 	SchemaPath            string
 	AutoMigrate           bool
@@ -40,12 +41,21 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	secure, err := getenvBool("SESSION_COOKIE_SECURE", false)
+	prod, err := getenvBool("PROD", false)
 	if err != nil {
 		return Config{}, err
 	}
+	secure, err := getenvBool("SESSION_COOKIE_SECURE", prod)
+	if err != nil {
+		return Config{}, err
+	}
+	address := ":8080"
+	if prod {
+		address = getenv("PROD_ADDRESS", ":5000")
+	}
 
 	return Config{
+		Address:               address,
 		DatabasePath:          getenv("DATABASE_PATH", "books.db"),
 		SchemaPath:            getenv("SCHEMA_PATH", "schema.sql"),
 		AutoMigrate:           autoMigrate,
