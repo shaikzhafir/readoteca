@@ -48,7 +48,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	strict := api.NewStrictHandler(server, []api.StrictMiddlewareFunc{handlers.RequestContextMiddleware})
-	api.HandlerFromMux(strict, mux)
+	api.HandlerFromMuxWithBaseURL(strict, mux, "/api")
 	mux.HandleFunc("/", spaHandler(cfg.DistPath))
 
 	fmt.Printf("Server running at %s\n", cfg.Address)

@@ -4,7 +4,7 @@ info:
   version: 0.0.1
   description: OAuth-only book tracking API.
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:8080/api
     description: Local backend
 
 components:

@@ -65,7 +65,7 @@ func Load() (Config, error) {
 		CORSAllowedOrigin:     getenv("CORS_ALLOWED_ORIGIN", frontendURL),
 		GoogleClientID:        os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret:    os.Getenv("GOOGLE_CLIENT_SECRET"),
-		GoogleRedirectURL:     getenv("GOOGLE_REDIRECT_URL", "http://localhost:8080/google/callback"),
+		GoogleRedirectURL:     getenv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/google/callback"),
 		SessionCookieName:     getenv("SESSION_COOKIE_NAME", "session_id"),
 		SessionCookieSecure:   secure,
 		SessionCookieDomain:   os.Getenv("SESSION_COOKIE_DOMAIN"),
