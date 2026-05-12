@@ -1,0 +1,77 @@
+name: Deploy to Remote VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Build Go binary
+        run: cd backend && go build -o ../readoteca .
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan "$REMOTE_VM_IP" >> ~/.ssh/known_hosts
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_VM_IP: ${{ secrets.REMOTE_VM_IP }}
+
+      - name: Stop systemd service
+        run: |
+          ssh -i ~/.ssh/id_rsa "$SSH_USER"@"$REMOTE_VM_IP" 'systemctl --user stop readoteca || true'
+        env:
+          REMOTE_VM_IP: ${{ secrets.REMOTE_VM_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+
+      - name: Backup database
+        run: |
+          ssh -i ~/.ssh/id_rsa "$SSH_USER"@"$REMOTE_VM_IP" \
+            'if [ -f /opt/readoteca/data/books.db ]; then
+              cp /opt/readoteca/data/books.db /opt/readoteca/data/books.db.bak-$(date +%Y%m%d%H%M%S)
+            fi'
+        env:
+          REMOTE_VM_IP: ${{ secrets.REMOTE_VM_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+
+      - name: Copy binary, schema, and frontend dist to VM
+        run: |
+          scp -i ~/.ssh/id_rsa readoteca "$SSH_USER"@"$REMOTE_VM_IP":/opt/readoteca/readoteca
+          scp -i ~/.ssh/id_rsa backend/schema.sql "$SSH_USER"@"$REMOTE_VM_IP":/opt/readoteca/schema.sql
+          ssh -i ~/.ssh/id_rsa "$SSH_USER"@"$REMOTE_VM_IP" 'mkdir -p /opt/readoteca/dist /opt/readoteca/data'
+          scp -i ~/.ssh/id_rsa -r frontend/dist/* "$SSH_USER"@"$REMOTE_VM_IP":/opt/readoteca/dist/
+        env:
+          REMOTE_VM_IP: ${{ secrets.REMOTE_VM_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+
+      - name: Restart systemd service
+        run: |
+          ssh -i ~/.ssh/id_rsa "$SSH_USER"@"$REMOTE_VM_IP" 'systemctl --user restart readoteca'
+        env:
+          REMOTE_VM_IP: ${{ secrets.REMOTE_VM_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
