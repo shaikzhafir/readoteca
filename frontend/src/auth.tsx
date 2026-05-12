@@ -1,166 +1,58 @@
-// this file handles login and logout logic, interacting with backend API
 import * as React from "react";
-import { createApiUrl } from "./config/api";
+import type { components } from "./api/schema";
+import { apiFetch } from "./api/client";
+
+export type User = components["schemas"]["User"];
 
 export interface AuthContext {
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  verifysession: () => Promise<{ success: boolean; error?: string }>;
-  register : (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  isLoading: boolean;
+  user: User | null;
+  refresh: () => Promise<User | null>;
   logout: () => Promise<void>;
-  user: string | null;
-}
-
-interface AuthResponse {
-  message : string;
-  data : {
-    id : string;
-    username : string;
-  }
 }
 
 const AuthContext = React.createContext<AuthContext | null>(null);
 
-const key = "tanstack.auth.user";
-
-function getStoredUser() {
-  return localStorage.getItem(key);
-}
-
-function setStoredUser(user: string | null) {
-  if (user) {
-    localStorage.setItem(key, user);
-  } else {
-    localStorage.removeItem(key);
-  }
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = React.useState<string | null>(getStoredUser());
-  const isAuthenticated = !!user;
+  const [user, setUser] = React.useState<User | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const refresh = React.useCallback(async () => {
+    try {
+      const me = await apiFetch<User>("/me");
+      setUser(me);
+      return me;
+    } catch {
+      setUser(null);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const logout = React.useCallback(async () => {
-    setStoredUser(null);
-    setUser(null);
-  }, []);
-
-  const login = React.useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await fetch(createApiUrl('/login'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      });
-      
-      const data = await response.json();
-  
-      if (!response.ok) {
-        console.log("Login failed: ", data);
-        // Return error message from server if available, or fallback message
-        return {
-          success: false,
-          error: data.message || data.error || 'Login failed. Please try again.',
-        };
-      }
-      
-      const authData: AuthResponse = data;
-      console.log("Login successful: ", authData);
-    
-      setStoredUser(authData.data.id);
-      setUser(authData.data.id);
-  
-      return {
-        success: true
-      };
-  
-    } catch (error) {
-      console.error("Error logging in: ", error);
-      return {
-        success: false,
-        error: 'Network error occurred. Please try again.',
-      };
-    }
-  }, []);
-
-  const verifysession = React.useCallback(async (): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const response = await fetch(createApiUrl('/verifysession'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Include cookies for session verification
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        console.log("Social auth verification failed: ", data);
-        // Return error message from server if available, or fallback message
-        return {
-          success: false,
-          error: data.message || data.error || 'Social auth verification failed. Please try again.',
-        };
-      }
-      const authData: AuthResponse = data;
-      console.log("Social auth verification successful: ", authData);
-      setStoredUser(authData.data.id);
-      setUser(authData.data.id);
-      return {
-        success: true
-      };
-    } catch (error) {
-      console.error("Error verifying social auth: ", error);
-      return {
-        success: false,
-        error: 'Network error occurred while verifying social auth. Please try again.',
-      };
-    }
-  }, []);
-
-  const register = React.useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const response = await fetch(createApiUrl('/register'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      });
-      
-      const data = await response.json();
-  
-      if (!response.ok) {
-        console.log("Registration failed: ", data);
-        // Return error message from server if available, or fallback message
-        return {
-          success: false,
-          error: data.message || data.error || 'Registration failed. Please try again.',
-        };
-      }
-      
-      console.log("Registration successful: ", data);
-    
-      return {
-        success: true
-      };
-  
-    }
-    catch (error) {
-      console.error("Error registering: ", error);
-      return {
-        success: false,
-        error: 'Network error occurred. Please try again.',
-      };
+      await apiFetch<void>("/logout", { method: "POST" });
+    } finally {
+      setUser(null);
     }
   }, []);
 
   React.useEffect(() => {
-    setUser(getStoredUser());
-  }, []);
+    void refresh();
+  }, [refresh]);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, verifysession, register, logout }}>
+    <AuthContext.Provider
+      value={{
+        isAuthenticated: !!user,
+        isLoading,
+        user,
+        refresh,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

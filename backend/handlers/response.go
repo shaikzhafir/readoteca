@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	log "booktrackr/logging"
+	log "readoteca/logging"
 	"encoding/json"
 	"net/http"
 )

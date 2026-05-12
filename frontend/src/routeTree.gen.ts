@@ -11,27 +11,12 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
-import { Route as SocialredirectImport } from './routes/socialredirect'
-import { Route as RegisterImport } from './routes/register'
 import { Route as AuthImport } from './routes/_auth'
 import { Route as IndexImport } from './routes/index'
-import { Route as AuthDashboardImport } from './routes/_auth.dashboard'
-import { Route as AuthBooksImport } from './routes/_auth.books'
-import { Route as AuthDetailBookIdImport } from './routes/_auth.detail.$bookId'
+import { Route as AuthCallbackImport } from './routes/auth.callback'
+import { Route as AuthLibraryImport } from './routes/_auth.library'
 
 // Create/Update Routes
-
-const SocialredirectRoute = SocialredirectImport.update({
-  id: '/socialredirect',
-  path: '/socialredirect',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const RegisterRoute = RegisterImport.update({
-  id: '/register',
-  path: '/register',
-  getParentRoute: () => rootRoute,
-} as any)
 
 const AuthRoute = AuthImport.update({
   id: '/_auth',
@@ -44,21 +29,15 @@ const IndexRoute = IndexImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const AuthDashboardRoute = AuthDashboardImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => AuthRoute,
+const AuthCallbackRoute = AuthCallbackImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRoute,
 } as any)
 
-const AuthBooksRoute = AuthBooksImport.update({
-  id: '/books',
-  path: '/books',
-  getParentRoute: () => AuthRoute,
-} as any)
-
-const AuthDetailBookIdRoute = AuthDetailBookIdImport.update({
-  id: '/detail/$bookId',
-  path: '/detail/$bookId',
+const AuthLibraryRoute = AuthLibraryImport.update({
+  id: '/library',
+  path: '/library',
   getParentRoute: () => AuthRoute,
 } as any)
 
@@ -80,40 +59,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthImport
       parentRoute: typeof rootRoute
     }
-    '/register': {
-      id: '/register'
-      path: '/register'
-      fullPath: '/register'
-      preLoaderRoute: typeof RegisterImport
+    '/_auth/library': {
+      id: '/_auth/library'
+      path: '/library'
+      fullPath: '/library'
+      preLoaderRoute: typeof AuthLibraryImport
+      parentRoute: typeof AuthImport
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackImport
       parentRoute: typeof rootRoute
-    }
-    '/socialredirect': {
-      id: '/socialredirect'
-      path: '/socialredirect'
-      fullPath: '/socialredirect'
-      preLoaderRoute: typeof SocialredirectImport
-      parentRoute: typeof rootRoute
-    }
-    '/_auth/books': {
-      id: '/_auth/books'
-      path: '/books'
-      fullPath: '/books'
-      preLoaderRoute: typeof AuthBooksImport
-      parentRoute: typeof AuthImport
-    }
-    '/_auth/dashboard': {
-      id: '/_auth/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthDashboardImport
-      parentRoute: typeof AuthImport
-    }
-    '/_auth/detail/$bookId': {
-      id: '/_auth/detail/$bookId'
-      path: '/detail/$bookId'
-      fullPath: '/detail/$bookId'
-      preLoaderRoute: typeof AuthDetailBookIdImport
-      parentRoute: typeof AuthImport
     }
   }
 }
@@ -121,15 +79,11 @@ declare module '@tanstack/react-router' {
 // Create and export the route tree
 
 interface AuthRouteChildren {
-  AuthBooksRoute: typeof AuthBooksRoute
-  AuthDashboardRoute: typeof AuthDashboardRoute
-  AuthDetailBookIdRoute: typeof AuthDetailBookIdRoute
+  AuthLibraryRoute: typeof AuthLibraryRoute
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
-  AuthBooksRoute: AuthBooksRoute,
-  AuthDashboardRoute: AuthDashboardRoute,
-  AuthDetailBookIdRoute: AuthDetailBookIdRoute,
+  AuthLibraryRoute: AuthLibraryRoute,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
@@ -137,77 +91,44 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '': typeof AuthRouteWithChildren
-  '/register': typeof RegisterRoute
-  '/socialredirect': typeof SocialredirectRoute
-  '/books': typeof AuthBooksRoute
-  '/dashboard': typeof AuthDashboardRoute
-  '/detail/$bookId': typeof AuthDetailBookIdRoute
+  '/library': typeof AuthLibraryRoute
+  '/auth/callback': typeof AuthCallbackRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '': typeof AuthRouteWithChildren
-  '/register': typeof RegisterRoute
-  '/socialredirect': typeof SocialredirectRoute
-  '/books': typeof AuthBooksRoute
-  '/dashboard': typeof AuthDashboardRoute
-  '/detail/$bookId': typeof AuthDetailBookIdRoute
+  '/library': typeof AuthLibraryRoute
+  '/auth/callback': typeof AuthCallbackRoute
 }
 
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/_auth': typeof AuthRouteWithChildren
-  '/register': typeof RegisterRoute
-  '/socialredirect': typeof SocialredirectRoute
-  '/_auth/books': typeof AuthBooksRoute
-  '/_auth/dashboard': typeof AuthDashboardRoute
-  '/_auth/detail/$bookId': typeof AuthDetailBookIdRoute
+  '/_auth/library': typeof AuthLibraryRoute
+  '/auth/callback': typeof AuthCallbackRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | ''
-    | '/register'
-    | '/socialredirect'
-    | '/books'
-    | '/dashboard'
-    | '/detail/$bookId'
+  fullPaths: '/' | '' | '/library' | '/auth/callback'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | ''
-    | '/register'
-    | '/socialredirect'
-    | '/books'
-    | '/dashboard'
-    | '/detail/$bookId'
-  id:
-    | '__root__'
-    | '/'
-    | '/_auth'
-    | '/register'
-    | '/socialredirect'
-    | '/_auth/books'
-    | '/_auth/dashboard'
-    | '/_auth/detail/$bookId'
+  to: '/' | '' | '/library' | '/auth/callback'
+  id: '__root__' | '/' | '/_auth' | '/_auth/library' | '/auth/callback'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
-  RegisterRoute: typeof RegisterRoute
-  SocialredirectRoute: typeof SocialredirectRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
-  RegisterRoute: RegisterRoute,
-  SocialredirectRoute: SocialredirectRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
 }
 
 export const routeTree = rootRoute
@@ -222,8 +143,7 @@ export const routeTree = rootRoute
       "children": [
         "/",
         "/_auth",
-        "/register",
-        "/socialredirect"
+        "/auth/callback"
       ]
     },
     "/": {
@@ -232,28 +152,15 @@ export const routeTree = rootRoute
     "/_auth": {
       "filePath": "_auth.tsx",
       "children": [
-        "/_auth/books",
-        "/_auth/dashboard",
-        "/_auth/detail/$bookId"
+        "/_auth/library"
       ]
     },
-    "/register": {
-      "filePath": "register.tsx"
-    },
-    "/socialredirect": {
-      "filePath": "socialredirect.tsx"
-    },
-    "/_auth/books": {
-      "filePath": "_auth.books.tsx",
+    "/_auth/library": {
+      "filePath": "_auth.library.tsx",
       "parent": "/_auth"
     },
-    "/_auth/dashboard": {
-      "filePath": "_auth.dashboard.tsx",
-      "parent": "/_auth"
-    },
-    "/_auth/detail/$bookId": {
-      "filePath": "_auth.detail.$bookId.tsx",
-      "parent": "/_auth"
+    "/auth/callback": {
+      "filePath": "auth.callback.tsx"
     }
   }
 }

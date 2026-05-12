@@ -1,18 +1,39 @@
--- name: CreateUser :exec
-INSERT INTO users (username, password_hash) VALUES (?, ?);
+-- name: UpsertGoogleUser :one
+INSERT INTO users (
+    google_sub,
+    email,
+    display_name,
+    avatar_url,
+    updated_at
+)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(google_sub) DO UPDATE SET
+    email = excluded.email,
+    display_name = excluded.display_name,
+    avatar_url = excluded.avatar_url,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING *;
 
 -- name: GetUserByID :one
-SELECT id, username, password_hash, created_at FROM users WHERE id = ?;
+SELECT * FROM users
+WHERE id = ?;
 
--- name: GetUserByUsername :one
-SELECT id, username, password_hash, created_at FROM users WHERE username = ?;
+-- name: GetUserByGoogleSub :one
+SELECT * FROM users
+WHERE google_sub = ?;
 
 -- name: CreateSession :exec
-INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?);
+INSERT INTO sessions (id, user_id, expires_at)
+VALUES (?, ?, ?);
 
 -- name: GetSessionByID :one
-SELECT id, user_id, created_at, expires_at FROM sessions WHERE id = ?;
+SELECT * FROM sessions
+WHERE id = ?;
 
--- name: DeleteSession :exec
-DELETE FROM sessions WHERE id = ?;
+-- name: DeleteSession :execrows
+DELETE FROM sessions
+WHERE id = ?;
 
+-- name: DeleteExpiredSessions :execrows
+DELETE FROM sessions
+WHERE expires_at <= CURRENT_TIMESTAMP;

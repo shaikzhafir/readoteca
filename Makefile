@@ -1,28 +1,35 @@
-# Makefile to manage backend and frontend services
+.PHONY: generate generate-backend generate-frontend test test-backend test-frontend install backend frontend start reset-db
 
-.PHONY: generate install backend frontend start
+generate: generate-backend generate-frontend
 
-# Generate Go DB code via sqlc
-generate:
+generate-backend:
 	cd backend && sqlc generate
+	cd backend && go generate ./api/openapi
 
-# Install frontend dependencies
+generate-frontend:
+	cd frontend && npm run generate:api
+
 install:
 	cd frontend && npm install
 
-# Run backend server (requires generated code)
-backend: generate
-	cd backend && go run main.go
+test: test-backend test-frontend
 
-# Run frontend dev server (requires dependencies)
-frontend: install
+test-backend:
+	cd backend && go test ./...
+
+test-frontend:
+	cd frontend && npm run build
+
+backend: generate-backend
+	cd backend && set -a && . ./.env && set +a && go run main.go
+
+frontend: generate-frontend
 	cd frontend && npm run dev
 
-# Start both backend and frontend
-# Backend runs in background; frontend runs in foreground
 start: generate install
-	echo "Starting backend..."
-	cd backend && go run main.go & \
+	cd backend && set -a && . ./.env && set +a && go run main.go & \
 	sleep 1; \
-	echo "Starting frontend..."
 	cd frontend && npm run dev
+
+reset-db:
+	rm -f backend/books.db

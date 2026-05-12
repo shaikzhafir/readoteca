@@ -4,13 +4,10 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 
 import { routeTree } from './routeTree.gen'
 import { AuthProvider, useAuth } from './auth'
+import { ThemeProvider } from './theme'
 
 import './styles.css'
 
-// Debug the route tree
-console.log('Route tree structure:', routeTree);
-
-// Set up a Router instance
 const router = createRouter({
   routeTree,
   defaultPreload: 'intent',
@@ -18,7 +15,6 @@ const router = createRouter({
   context: {
     auth: undefined!, // This will be set after we wrap the app in an AuthProvider
   },
-  // Enable verbose debugging
   defaultErrorComponent: ({ error }) => {
     console.error('Router error:', error);
     return <div>An error occurred: {error.message || String(error)}</div>;
@@ -34,14 +30,23 @@ declare module '@tanstack/react-router' {
 
 function InnerApp() {
   const auth = useAuth()
+  if (auth.isLoading) {
+    return (
+      <div className="auth-container">
+        <div className="auth-card text-center">Loading...</div>
+      </div>
+    )
+  }
   return <RouterProvider router={router} context={{ auth }} />
 }
 
 function App() {
   return (
+    <ThemeProvider>
       <AuthProvider>
         <InnerApp />
       </AuthProvider>
+    </ThemeProvider>
   )
 }
 

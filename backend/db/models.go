@@ -10,34 +10,50 @@ import (
 )
 
 type Book struct {
-	ID          int64  `json:"id"`
-	Isbn        string `json:"isbn"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Author      string `json:"author"`
-	ImageUrl    string `json:"image_url"`
+	ID            int64          `json:"id"`
+	Source        string         `json:"source"`
+	SourceID      string         `json:"source_id"`
+	Isbn10        sql.NullString `json:"isbn_10"`
+	Isbn13        sql.NullString `json:"isbn_13"`
+	Title         string         `json:"title"`
+	Authors       string         `json:"authors"`
+	Description   sql.NullString `json:"description"`
+	CoverUrl      sql.NullString `json:"cover_url"`
+	PublishedDate sql.NullString `json:"published_date"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 }
 
 type Session struct {
-	ID        string       `json:"id"`
-	UserID    int64        `json:"user_id"`
-	CreatedAt sql.NullTime `json:"created_at"`
-	ExpiresAt time.Time    `json:"expires_at"`
+	ID        string    `json:"id"`
+	UserID    int64     `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 type User struct {
-	ID           int64        `json:"id"`
-	Username     string       `json:"username"`
-	PasswordHash string       `json:"password_hash"`
-	CreatedAt    sql.NullTime `json:"created_at"`
+	ID          int64          `json:"id"`
+	GoogleSub   string         `json:"google_sub"`
+	Email       string         `json:"email"`
+	DisplayName string         `json:"display_name"`
+	AvatarUrl   sql.NullString `json:"avatar_url"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
 type UserBook struct {
-	UserID     int64          `json:"user_id"`
-	BookID     int64          `json:"book_id"`
-	StartDate  sql.NullTime   `json:"start_date"`
-	Progress   sql.NullInt64  `json:"progress"`
-	FinishDate sql.NullTime   `json:"finish_date"`
-	Rating     sql.NullInt64  `json:"rating"`
-	Review     sql.NullString `json:"review"`
+	ID              int64          `json:"id"`
+	UserID          int64          `json:"user_id"`
+	BookID          int64          `json:"book_id"`
+	Status          string         `json:"status"`
+	Progress        int64          `json:"progress"`
+	Rating          sql.NullInt64  `json:"rating"`
+	Notes           sql.NullString `json:"notes"`
+	Review          sql.NullString `json:"review"`
+	ReviewPublished int64          `json:"review_published"`
+	StartedAt       sql.NullTime   `json:"started_at"`
+	FinishedAt      sql.NullTime   `json:"finished_at"`
+	AbandonedAt     sql.NullTime   `json:"abandoned_at"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
 }

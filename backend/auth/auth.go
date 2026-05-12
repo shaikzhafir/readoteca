@@ -2,123 +2,112 @@ package auth
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"net/http"
-	"os"
+	"net/url"
 	"strings"
 	"time"
+
+	"readoteca/config"
 
 	"golang.org/x/oauth2"
 	googleOAuth2 "golang.org/x/oauth2/google"
 )
 
-const (
-	SessionCookieName = "session_id"
-	SessionDuration   = 24 * time.Hour
-)
+const OAuthStateCookieName = "oauth_state"
 
-func GetOAuthConfig() (*oauth2.Config, error) {
-	clientID, ok := os.LookupEnv("GOOGLE_CLIENT_ID")
-	if !ok {
-		return nil, errors.New("GOOGLE_CLIENT_ID not set")
+func OAuthConfig(cfg config.Config) (*oauth2.Config, error) {
+	if err := cfg.ValidateOAuth(); err != nil {
+		return nil, err
 	}
-	clientSecret, ok := os.LookupEnv("GOOGLE_CLIENT_SECRET")
-	if !ok {
-		return nil, errors.New("GOOGLE_CLIENT_SECRET not set")
-	}
-	oauth2Config := &oauth2.Config{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		RedirectURL:  "http://localhost:8080/google/callback",
+	return &oauth2.Config{
+		ClientID:     cfg.GoogleClientID,
+		ClientSecret: cfg.GoogleClientSecret,
+		RedirectURL:  cfg.GoogleRedirectURL,
 		Endpoint:     googleOAuth2.Endpoint,
 		Scopes:       []string{"profile", "email"},
-	}
-	return oauth2Config, nil
+	}, nil
 }
 
-// HashPassword creates a secure hash of a password
-func HashPassword(password string) string {
-	// Add a static salt to make it more secure
-	salt := "booktrackr_static_salt"
-	// Combine password with salt
-	saltedPassword := password + salt
-	// Hash the salted password
-	hash := sha256.Sum256([]byte(saltedPassword))
-	// Return as a hex string
-	return hex.EncodeToString(hash[:])
-}
-
-// VerifyPassword checks if a password matches the hash
-func VerifyPassword(password string, hashedPassword string) bool {
-	// Hash the password with the same method
-	passwordHash := HashPassword(password)
-	// Use constant time comparison to prevent timing attacks
-	return subtle.ConstantTimeCompare([]byte(passwordHash), []byte(hashedPassword)) == 1
-}
-
-// GenerateSessionID creates a random session ID
-func GenerateSessionID() (string, error) {
+func GenerateRandomToken() (string, error) {
 	b := make([]byte, 32)
-	_, err := rand.Read(b)
-	if err != nil {
+	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(b), nil
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// GetSessionIDFromRequest extracts the session ID from the request
-func GetSessionIDFromRequest(r *http.Request) (string, error) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader != "" {
-		// Check if it's a Bearer token
-		parts := strings.Split(authHeader, " ")
-		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
-			return parts[1], nil
-		}
+func SessionCookie(cfg config.Config, sessionID string) *http.Cookie {
+	return &http.Cookie{
+		Name:     cfg.SessionCookieName,
+		Value:    sessionID,
+		Path:     "/",
+		Domain:   cfg.SessionCookieDomain,
+		Expires:  time.Now().Add(cfg.SessionDuration),
+		MaxAge:   int(cfg.SessionDuration.Seconds()),
+		HttpOnly: true,
+		SameSite: cfg.SessionCookieSameSite,
+		Secure:   cfg.SessionCookieSecure,
 	}
-	return "", errors.New("session ID not found in request")
 }
 
-func GetSessionIDFromCookie(r *http.Request) (string, error) {
-	cookie, err := r.Cookie(SessionCookieName)
+func ClearSessionCookie(cfg config.Config) *http.Cookie {
+	return &http.Cookie{
+		Name:     cfg.SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		Domain:   cfg.SessionCookieDomain,
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: cfg.SessionCookieSameSite,
+		Secure:   cfg.SessionCookieSecure,
+	}
+}
+
+func OAuthStateCookie(cfg config.Config, state string) *http.Cookie {
+	return &http.Cookie{
+		Name:     OAuthStateCookieName,
+		Value:    state,
+		Path:     "/",
+		Domain:   cfg.SessionCookieDomain,
+		MaxAge:   10 * 60,
+		HttpOnly: true,
+		SameSite: cfg.SessionCookieSameSite,
+		Secure:   cfg.SessionCookieSecure,
+	}
+}
+
+func SessionIDFromRequest(cfg config.Config, r *http.Request) (string, error) {
+	cookie, err := r.Cookie(cfg.SessionCookieName)
 	if err != nil {
 		return "", err
 	}
 	if cookie.Value == "" {
-		return "", errors.New("session ID cookie is empty")
+		return "", errors.New("session cookie is empty")
 	}
 	return cookie.Value, nil
 }
 
-// SetSessionCookie adds a session cookie to the response
-func SetSessionCookie(w http.ResponseWriter, sessionID string) {
-	expires := time.Now().Add(SessionDuration)
-	cookie := &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    sessionID,
-		Path:     "/",
-		Expires:  expires,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, // Allow cross-site requests for development
-		Secure:   false,                // Set to true in production with HTTPS
+func OAuthStateFromRequest(r *http.Request) (string, error) {
+	cookie, err := r.Cookie(OAuthStateCookieName)
+	if err != nil {
+		return "", err
 	}
-	http.SetCookie(w, cookie)
+	if cookie.Value == "" {
+		return "", errors.New("oauth state cookie is empty")
+	}
+	return cookie.Value, nil
 }
 
-// ClearSessionCookie removes the session cookie
-func ClearSessionCookie(w http.ResponseWriter) {
-	cookie := &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, // Allow cross-site requests for development
-		Secure:   false,                // Set to true in production with HTTPS
+func SafeNext(next *string) string {
+	if next == nil || *next == "" {
+		return "/library"
 	}
-	http.SetCookie(w, cookie)
+	value := strings.TrimSpace(*next)
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.IsAbs() || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") {
+		return "/library"
+	}
+	return value
 }

@@ -9,67 +9,61 @@ import (
 	"path/filepath"
 	"strings"
 
-	"booktrackr/auth"
-	"booktrackr/db"
-	"booktrackr/handlers"
+	api "readoteca/api/generated"
+	"readoteca/config"
+	"readoteca/db"
+	"readoteca/handlers"
+	"readoteca/pkg/googlebooks"
 
-	"github.com/dghubble/gologin/v2"
-	"github.com/dghubble/gologin/v2/google"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
-	conn, err := sql.Open("sqlite3", "books.db")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	conn, err := sql.Open("sqlite3", cfg.DatabasePath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer conn.Close()
 
-	// Read schema file and execute it
-	schema, err := os.ReadFile("schema.sql")
-	if err != nil {
-		log.Fatalf("failed to read schema.sql: %v", err)
-	}
-
-	if _, err := conn.Exec(string(schema)); err != nil {
-		log.Fatalf("failed to create schema: %v", err)
+	if cfg.AutoMigrate {
+		if err := runSchema(conn, cfg.SchemaPath); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	store := db.New(conn)
-	bh := handlers.NewBookHandler(store)
+	catalog, err := googlebooks.New(cfg.GoogleBooksAPIKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+	server, err := handlers.NewServer(cfg, store, catalog)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	mux := http.NewServeMux()
-
-	// Auth routes
-	mux.HandleFunc("/register", handlers.RegisterHandler(store))
-	mux.HandleFunc("/login", handlers.LoginHandler(store))
-	mux.HandleFunc("/logout", handlers.LogoutHandler())
-	mux.HandleFunc("/me", handlers.AuthMiddleware(handlers.MeHandler(store)))
-	mux.HandleFunc("/verifysession", handlers.VerifySessionHandler(store))
-
-	// Google OAuth routes
-	googleOAuthConfig, err := auth.GetOAuthConfig()
-	if err != nil {
-		log.Fatalf("failed to get OAuth config: %v", err)
-	}
-	stateConfig := gologin.DebugOnlyCookieConfig
-	mux.Handle("/google/login", google.StateHandler(stateConfig, google.LoginHandler(googleOAuthConfig, gologin.DefaultFailureHandler)))
-	mux.Handle("/google/callback", google.StateHandler(stateConfig, google.CallbackHandler(googleOAuthConfig, handlers.IssueSession(store), gologin.DefaultFailureHandler)))
-	// mux.HandleFunc("GET /books", handlers.AuthMiddleware(bh.ListExternalBooks()))
-
-	// Protected routes
-	mux.HandleFunc("GET /google/books", handlers.AuthMiddleware(bh.ListExternalBooks()))
-	mux.HandleFunc("POST /user/books", handlers.AuthMiddleware(bh.CreateUserBook()))
-	mux.HandleFunc("GET /user/books", handlers.AuthMiddleware(bh.ListUserBooks()))
-	mux.HandleFunc("GET /user/books/{id}", handlers.AuthMiddleware(bh.GetBookByUserID()))
-	mux.HandleFunc("PUT /user/books/{id}", handlers.AuthMiddleware(bh.UpdateUserBook()))
+	strict := api.NewStrictHandler(server, []api.StrictMiddlewareFunc{handlers.RequestContextMiddleware})
+	api.HandlerFromMux(strict, mux)
+	mux.HandleFunc("/", spaHandler("../frontend/dist"))
 
 	fmt.Println("Server running at http://localhost:8080")
-	handler := handlers.WithCORS(mux)
+	log.Fatal(http.ListenAndServe(":8080", handlers.WithCORS(mux, cfg)))
+}
 
-	// frontend based
-	mux.HandleFunc("/", spaHandler("../frontend/dist"))
-	log.Fatal(http.ListenAndServe(":8080", handler))
+func runSchema(conn *sql.DB, schemaPath string) error {
+	schema, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return fmt.Errorf("read schema: %w", err)
+	}
+	if _, err := conn.Exec(string(schema)); err != nil {
+		return fmt.Errorf("apply schema: %w", err)
+	}
+	return nil
 }
 
 func spaHandler(distPath string) http.HandlerFunc {
@@ -78,7 +72,6 @@ func spaHandler(distPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
-		// Set cache headers for assets
 		if strings.HasPrefix(path, "/assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000")
 		}

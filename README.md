@@ -1,40 +1,73 @@
-# Book Tracker
+# Readoteca
 
-This project is a simple book tracking application. It consists of a backend API built with Go and a frontend interface built with React.
+Readoteca is a small OAuth-only reading tracker with a Go backend, SQLite storage, and a React frontend.
 
-## Backend
+## Current Scope
 
-The backend is located in the `backend` directory. It is a Go application that provides an API for managing books and user authentication.
+- Google OAuth login only.
+- Server-side sessions stored in SQLite and sent with an HttpOnly `session_id` cookie.
+- OpenAPI is the API contract for backend and frontend generated types.
+- Google Books is the first catalog source.
+- Authenticated users can search books, add them to a personal library, update progress/status/rating/notes/review, and remove books.
 
-### Structure
+See [docs/v0.0.1-plan.md](docs/v0.0.1-plan.md) for the current MVP plan.
 
-*   `auth`: Contains authentication-related code.
-*   `db`: Contains database connection logic.
-*   `handlers`: Contains the HTTP handler functions for the API endpoints.
-*   `main.go`: The main entry point of the application.
-*   `queries`: Contains SQL queries used by the application.
-*   `schema.sql`: Defines the database schema.
-*   `sqlc.yaml`: Configuration file for sqlc.
+## Prerequisites
 
-### Running the Backend
+- Go
+- Node.js and npm
+- Google OAuth client credentials
 
-1.  Navigate to the `backend` directory: `cd backend`
-2.  Run the application: `go run main.go`
+For local OAuth, configure a Google OAuth web client with this redirect URI:
 
-## Frontend
+```text
+http://localhost:8080/google/callback
+```
 
-The frontend is located in the `frontend` directory. It is a React application that provides a user interface for interacting with the backend API.
+## Environment
 
-### Structure
+The backend reads these environment variables:
 
-*   `public`: Contains static assets.
-*   `src`: Contains the React components and application logic.
-*   `index.html`: The main HTML file.
-*   `package.json`: Contains the project dependencies and scripts.
-*   `vite.config.js`: Configuration file for Vite.
+```sh
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URL=http://localhost:8080/google/callback
+FRONTEND_URL=http://localhost:3000
+CORS_ALLOWED_ORIGIN=http://localhost:3000
+DATABASE_PATH=books.db
+SCHEMA_PATH=schema.sql
+AUTO_MIGRATE=true
+SESSION_COOKIE_NAME=session_id
+SESSION_COOKIE_SECURE=false
+SESSION_COOKIE_SAMESITE=lax
+SESSION_DURATION_HOURS=24
+GOOGLE_BOOKS_API_KEY=...
+```
 
-### Running the Frontend
+Only `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are required for the backend to start. `GOOGLE_BOOKS_API_KEY` is optional for local development.
 
-1.  Navigate to the `frontend` directory: `cd frontend`
-2.  Install dependencies: `npm install`
-3.  Start the development server: `npm run dev`
+## Common Commands
+
+```sh
+make install
+make generate
+make test
+make backend
+make frontend
+```
+
+`make start` runs backend and frontend together for local development. Use `make reset-db` when the SQLite schema has changed and you are fine deleting the local development database.
+
+## API Generation
+
+Backend API code is generated from [backend/api/openapi/openapi.yaml](backend/api/openapi/openapi.yaml):
+
+```sh
+make generate-backend
+```
+
+Frontend API types are generated from the same OpenAPI document:
+
+```sh
+make generate-frontend
+```

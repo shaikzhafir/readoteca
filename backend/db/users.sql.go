@@ -7,11 +7,13 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)
+INSERT INTO sessions (id, user_id, expires_at)
+VALUES (?, ?, ?)
 `
 
 type CreateSessionParams struct {
@@ -25,31 +27,35 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 	return err
 }
 
-const createUser = `-- name: CreateUser :exec
-INSERT INTO users (username, password_hash) VALUES (?, ?)
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
+DELETE FROM sessions
+WHERE expires_at <= CURRENT_TIMESTAMP
 `
 
-type CreateUserParams struct {
-	Username     string `json:"username"`
-	PasswordHash string `json:"password_hash"`
+func (q *Queries) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteExpiredSessions)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
-	_, err := q.db.ExecContext(ctx, createUser, arg.Username, arg.PasswordHash)
-	return err
-}
-
-const deleteSession = `-- name: DeleteSession :exec
-DELETE FROM sessions WHERE id = ?
+const deleteSession = `-- name: DeleteSession :execrows
+DELETE FROM sessions
+WHERE id = ?
 `
 
-func (q *Queries) DeleteSession(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, deleteSession, id)
-	return err
+func (q *Queries) DeleteSession(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSession, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getSessionByID = `-- name: GetSessionByID :one
-SELECT id, user_id, created_at, expires_at FROM sessions WHERE id = ?
+SELECT id, user_id, created_at, expires_at FROM sessions
+WHERE id = ?
 `
 
 func (q *Queries) GetSessionByID(ctx context.Context, id string) (Session, error) {
@@ -64,8 +70,29 @@ func (q *Queries) GetSessionByID(ctx context.Context, id string) (Session, error
 	return i, err
 }
 
+const getUserByGoogleSub = `-- name: GetUserByGoogleSub :one
+SELECT id, google_sub, email, display_name, avatar_url, created_at, updated_at FROM users
+WHERE google_sub = ?
+`
+
+func (q *Queries) GetUserByGoogleSub(ctx context.Context, googleSub string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByGoogleSub, googleSub)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.GoogleSub,
+		&i.Email,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, created_at FROM users WHERE id = ?
+SELECT id, google_sub, email, display_name, avatar_url, created_at, updated_at FROM users
+WHERE id = ?
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -73,25 +100,56 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.Username,
-		&i.PasswordHash,
+		&i.GoogleSub,
+		&i.Email,
+		&i.DisplayName,
+		&i.AvatarUrl,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, created_at FROM users WHERE username = ?
+const upsertGoogleUser = `-- name: UpsertGoogleUser :one
+INSERT INTO users (
+    google_sub,
+    email,
+    display_name,
+    avatar_url,
+    updated_at
+)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(google_sub) DO UPDATE SET
+    email = excluded.email,
+    display_name = excluded.display_name,
+    avatar_url = excluded.avatar_url,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING id, google_sub, email, display_name, avatar_url, created_at, updated_at
 `
 
-func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUserByUsername, username)
+type UpsertGoogleUserParams struct {
+	GoogleSub   string         `json:"google_sub"`
+	Email       string         `json:"email"`
+	DisplayName string         `json:"display_name"`
+	AvatarUrl   sql.NullString `json:"avatar_url"`
+}
+
+func (q *Queries) UpsertGoogleUser(ctx context.Context, arg UpsertGoogleUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, upsertGoogleUser,
+		arg.GoogleSub,
+		arg.Email,
+		arg.DisplayName,
+		arg.AvatarUrl,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.Username,
-		&i.PasswordHash,
+		&i.GoogleSub,
+		&i.Email,
+		&i.DisplayName,
+		&i.AvatarUrl,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

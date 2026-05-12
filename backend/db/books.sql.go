@@ -8,60 +8,63 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
-const createBook = `-- name: CreateBook :one
-INSERT INTO books (isbn, title, description, author, image_url) 
-VALUES (?, ?, ?, ?, ?)
-RETURNING id
+const createLibraryItem = `-- name: CreateLibraryItem :one
+INSERT INTO user_books (user_id, book_id)
+VALUES (?, ?)
+RETURNING id, user_id, book_id, status, progress, rating, notes, review, review_published, started_at, finished_at, abandoned_at, created_at, updated_at
 `
 
-type CreateBookParams struct {
-	Isbn        string `json:"isbn"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Author      string `json:"author"`
-	ImageUrl    string `json:"image_url"`
-}
-
-func (q *Queries) CreateBook(ctx context.Context, arg CreateBookParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, createBook,
-		arg.Isbn,
-		arg.Title,
-		arg.Description,
-		arg.Author,
-		arg.ImageUrl,
-	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
-const createUserBook = `-- name: CreateUserBook :exec
-INSERT INTO user_books (user_id, book_id) VALUES (?, ?)
-`
-
-type CreateUserBookParams struct {
+type CreateLibraryItemParams struct {
 	UserID int64 `json:"user_id"`
 	BookID int64 `json:"book_id"`
 }
 
-func (q *Queries) CreateUserBook(ctx context.Context, arg CreateUserBookParams) error {
-	_, err := q.db.ExecContext(ctx, createUserBook, arg.UserID, arg.BookID)
-	return err
+func (q *Queries) CreateLibraryItem(ctx context.Context, arg CreateLibraryItemParams) (UserBook, error) {
+	row := q.db.QueryRowContext(ctx, createLibraryItem, arg.UserID, arg.BookID)
+	var i UserBook
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.BookID,
+		&i.Status,
+		&i.Progress,
+		&i.Rating,
+		&i.Notes,
+		&i.Review,
+		&i.ReviewPublished,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.AbandonedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
-const deleteBook = `-- name: DeleteBook :exec
-DELETE FROM books WHERE id = ?
+const deleteLibraryItem = `-- name: DeleteLibraryItem :execrows
+DELETE FROM user_books
+WHERE user_id = ? AND id = ?
 `
 
-func (q *Queries) DeleteBook(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteBook, id)
-	return err
+type DeleteLibraryItemParams struct {
+	UserID int64 `json:"user_id"`
+	ID     int64 `json:"id"`
+}
+
+func (q *Queries) DeleteLibraryItem(ctx context.Context, arg DeleteLibraryItemParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteLibraryItem, arg.UserID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getBook = `-- name: GetBook :one
-SELECT id, isbn, title, description, author, image_url FROM books WHERE id = ?
+SELECT id, source, source_id, isbn_10, isbn_13, title, authors, description, cover_url, published_date, created_at, updated_at FROM books
+WHERE id = ?
 `
 
 func (q *Queries) GetBook(ctx context.Context, id int64) (Book, error) {
@@ -69,194 +72,352 @@ func (q *Queries) GetBook(ctx context.Context, id int64) (Book, error) {
 	var i Book
 	err := row.Scan(
 		&i.ID,
-		&i.Isbn,
+		&i.Source,
+		&i.SourceID,
+		&i.Isbn10,
+		&i.Isbn13,
 		&i.Title,
+		&i.Authors,
 		&i.Description,
-		&i.Author,
-		&i.ImageUrl,
+		&i.CoverUrl,
+		&i.PublishedDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const getUserBook = `-- name: GetUserBook :one
-SELECT 
+const getBookBySource = `-- name: GetBookBySource :one
+SELECT id, source, source_id, isbn_10, isbn_13, title, authors, description, cover_url, published_date, created_at, updated_at FROM books
+WHERE source = ? AND source_id = ?
+`
+
+type GetBookBySourceParams struct {
+	Source   string `json:"source"`
+	SourceID string `json:"source_id"`
+}
+
+func (q *Queries) GetBookBySource(ctx context.Context, arg GetBookBySourceParams) (Book, error) {
+	row := q.db.QueryRowContext(ctx, getBookBySource, arg.Source, arg.SourceID)
+	var i Book
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.SourceID,
+		&i.Isbn10,
+		&i.Isbn13,
+		&i.Title,
+		&i.Authors,
+		&i.Description,
+		&i.CoverUrl,
+		&i.PublishedDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLibraryItem = `-- name: GetLibraryItem :one
+SELECT
+    ub.id,
     ub.user_id,
     ub.book_id,
-    ub.start_date,
+    ub.status,
     ub.progress,
-    ub.finish_date,
     ub.rating,
+    ub.notes,
     ub.review,
-    b.isbn,
+    ub.review_published,
+    ub.started_at,
+    ub.finished_at,
+    ub.abandoned_at,
+    ub.created_at,
+    ub.updated_at,
+    b.id AS book_id_2,
+    b.source,
+    b.source_id,
+    b.isbn_10,
+    b.isbn_13,
     b.title,
+    b.authors,
     b.description,
-    b.author,
-    b.image_url
+    b.cover_url,
+    b.published_date,
+    b.created_at AS book_created_at,
+    b.updated_at AS book_updated_at
 FROM user_books ub
-JOIN books b ON ub.book_id = b.id
+JOIN books b ON b.id = ub.book_id
+WHERE ub.user_id = ? AND ub.id = ?
+`
+
+type GetLibraryItemParams struct {
+	UserID int64 `json:"user_id"`
+	ID     int64 `json:"id"`
+}
+
+type GetLibraryItemRow struct {
+	ID              int64          `json:"id"`
+	UserID          int64          `json:"user_id"`
+	BookID          int64          `json:"book_id"`
+	Status          string         `json:"status"`
+	Progress        int64          `json:"progress"`
+	Rating          sql.NullInt64  `json:"rating"`
+	Notes           sql.NullString `json:"notes"`
+	Review          sql.NullString `json:"review"`
+	ReviewPublished int64          `json:"review_published"`
+	StartedAt       sql.NullTime   `json:"started_at"`
+	FinishedAt      sql.NullTime   `json:"finished_at"`
+	AbandonedAt     sql.NullTime   `json:"abandoned_at"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	BookID2         int64          `json:"book_id_2"`
+	Source          string         `json:"source"`
+	SourceID        string         `json:"source_id"`
+	Isbn10          sql.NullString `json:"isbn_10"`
+	Isbn13          sql.NullString `json:"isbn_13"`
+	Title           string         `json:"title"`
+	Authors         string         `json:"authors"`
+	Description     sql.NullString `json:"description"`
+	CoverUrl        sql.NullString `json:"cover_url"`
+	PublishedDate   sql.NullString `json:"published_date"`
+	BookCreatedAt   time.Time      `json:"book_created_at"`
+	BookUpdatedAt   time.Time      `json:"book_updated_at"`
+}
+
+func (q *Queries) GetLibraryItem(ctx context.Context, arg GetLibraryItemParams) (GetLibraryItemRow, error) {
+	row := q.db.QueryRowContext(ctx, getLibraryItem, arg.UserID, arg.ID)
+	var i GetLibraryItemRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.BookID,
+		&i.Status,
+		&i.Progress,
+		&i.Rating,
+		&i.Notes,
+		&i.Review,
+		&i.ReviewPublished,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.AbandonedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BookID2,
+		&i.Source,
+		&i.SourceID,
+		&i.Isbn10,
+		&i.Isbn13,
+		&i.Title,
+		&i.Authors,
+		&i.Description,
+		&i.CoverUrl,
+		&i.PublishedDate,
+		&i.BookCreatedAt,
+		&i.BookUpdatedAt,
+	)
+	return i, err
+}
+
+const getLibraryItemByUserAndBook = `-- name: GetLibraryItemByUserAndBook :one
+SELECT
+    ub.id,
+    ub.user_id,
+    ub.book_id,
+    ub.status,
+    ub.progress,
+    ub.rating,
+    ub.notes,
+    ub.review,
+    ub.review_published,
+    ub.started_at,
+    ub.finished_at,
+    ub.abandoned_at,
+    ub.created_at,
+    ub.updated_at,
+    b.id AS book_id_2,
+    b.source,
+    b.source_id,
+    b.isbn_10,
+    b.isbn_13,
+    b.title,
+    b.authors,
+    b.description,
+    b.cover_url,
+    b.published_date,
+    b.created_at AS book_created_at,
+    b.updated_at AS book_updated_at
+FROM user_books ub
+JOIN books b ON b.id = ub.book_id
 WHERE ub.user_id = ? AND ub.book_id = ?
 `
 
-type GetUserBookParams struct {
+type GetLibraryItemByUserAndBookParams struct {
 	UserID int64 `json:"user_id"`
 	BookID int64 `json:"book_id"`
 }
 
-type GetUserBookRow struct {
-	UserID      int64          `json:"user_id"`
-	BookID      int64          `json:"book_id"`
-	StartDate   sql.NullTime   `json:"start_date"`
-	Progress    sql.NullInt64  `json:"progress"`
-	FinishDate  sql.NullTime   `json:"finish_date"`
-	Rating      sql.NullInt64  `json:"rating"`
-	Review      sql.NullString `json:"review"`
-	Isbn        string         `json:"isbn"`
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	Author      string         `json:"author"`
-	ImageUrl    string         `json:"image_url"`
+type GetLibraryItemByUserAndBookRow struct {
+	ID              int64          `json:"id"`
+	UserID          int64          `json:"user_id"`
+	BookID          int64          `json:"book_id"`
+	Status          string         `json:"status"`
+	Progress        int64          `json:"progress"`
+	Rating          sql.NullInt64  `json:"rating"`
+	Notes           sql.NullString `json:"notes"`
+	Review          sql.NullString `json:"review"`
+	ReviewPublished int64          `json:"review_published"`
+	StartedAt       sql.NullTime   `json:"started_at"`
+	FinishedAt      sql.NullTime   `json:"finished_at"`
+	AbandonedAt     sql.NullTime   `json:"abandoned_at"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	BookID2         int64          `json:"book_id_2"`
+	Source          string         `json:"source"`
+	SourceID        string         `json:"source_id"`
+	Isbn10          sql.NullString `json:"isbn_10"`
+	Isbn13          sql.NullString `json:"isbn_13"`
+	Title           string         `json:"title"`
+	Authors         string         `json:"authors"`
+	Description     sql.NullString `json:"description"`
+	CoverUrl        sql.NullString `json:"cover_url"`
+	PublishedDate   sql.NullString `json:"published_date"`
+	BookCreatedAt   time.Time      `json:"book_created_at"`
+	BookUpdatedAt   time.Time      `json:"book_updated_at"`
 }
 
-func (q *Queries) GetUserBook(ctx context.Context, arg GetUserBookParams) (GetUserBookRow, error) {
-	row := q.db.QueryRowContext(ctx, getUserBook, arg.UserID, arg.BookID)
-	var i GetUserBookRow
+func (q *Queries) GetLibraryItemByUserAndBook(ctx context.Context, arg GetLibraryItemByUserAndBookParams) (GetLibraryItemByUserAndBookRow, error) {
+	row := q.db.QueryRowContext(ctx, getLibraryItemByUserAndBook, arg.UserID, arg.BookID)
+	var i GetLibraryItemByUserAndBookRow
 	err := row.Scan(
+		&i.ID,
 		&i.UserID,
 		&i.BookID,
-		&i.StartDate,
+		&i.Status,
 		&i.Progress,
-		&i.FinishDate,
 		&i.Rating,
+		&i.Notes,
 		&i.Review,
-		&i.Isbn,
+		&i.ReviewPublished,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.AbandonedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BookID2,
+		&i.Source,
+		&i.SourceID,
+		&i.Isbn10,
+		&i.Isbn13,
 		&i.Title,
+		&i.Authors,
 		&i.Description,
-		&i.Author,
-		&i.ImageUrl,
+		&i.CoverUrl,
+		&i.PublishedDate,
+		&i.BookCreatedAt,
+		&i.BookUpdatedAt,
 	)
 	return i, err
 }
 
-const listBooks = `-- name: ListBooks :many
-SELECT id, isbn, title, description, author, image_url FROM books ORDER BY id
-`
-
-func (q *Queries) ListBooks(ctx context.Context) ([]Book, error) {
-	rows, err := q.db.QueryContext(ctx, listBooks)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Book
-	for rows.Next() {
-		var i Book
-		if err := rows.Scan(
-			&i.ID,
-			&i.Isbn,
-			&i.Title,
-			&i.Description,
-			&i.Author,
-			&i.ImageUrl,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listBooksByUser = `-- name: ListBooksByUser :many
-SELECT 
-    b.id,
-    b.isbn,
-    b.title,
-    b.description,
-    b.author,
-    b.image_url,
+const listLibraryItems = `-- name: ListLibraryItems :many
+SELECT
+    ub.id,
+    ub.user_id,
+    ub.book_id,
+    ub.status,
     ub.progress,
-    ub.start_date,
-    ub.finish_date,
-    ub.rating
-FROM books b
-JOIN user_books ub ON b.id = ub.book_id
+    ub.rating,
+    ub.notes,
+    ub.review,
+    ub.review_published,
+    ub.started_at,
+    ub.finished_at,
+    ub.abandoned_at,
+    ub.created_at,
+    ub.updated_at,
+    b.id AS book_id_2,
+    b.source,
+    b.source_id,
+    b.isbn_10,
+    b.isbn_13,
+    b.title,
+    b.authors,
+    b.description,
+    b.cover_url,
+    b.published_date,
+    b.created_at AS book_created_at,
+    b.updated_at AS book_updated_at
+FROM user_books ub
+JOIN books b ON b.id = ub.book_id
 WHERE ub.user_id = ?
-ORDER BY b.id
+ORDER BY ub.updated_at DESC, ub.id DESC
 `
 
-type ListBooksByUserRow struct {
-	ID          int64         `json:"id"`
-	Isbn        string        `json:"isbn"`
-	Title       string        `json:"title"`
-	Description string        `json:"description"`
-	Author      string        `json:"author"`
-	ImageUrl    string        `json:"image_url"`
-	Progress    sql.NullInt64 `json:"progress"`
-	StartDate   sql.NullTime  `json:"start_date"`
-	FinishDate  sql.NullTime  `json:"finish_date"`
-	Rating      sql.NullInt64 `json:"rating"`
+type ListLibraryItemsRow struct {
+	ID              int64          `json:"id"`
+	UserID          int64          `json:"user_id"`
+	BookID          int64          `json:"book_id"`
+	Status          string         `json:"status"`
+	Progress        int64          `json:"progress"`
+	Rating          sql.NullInt64  `json:"rating"`
+	Notes           sql.NullString `json:"notes"`
+	Review          sql.NullString `json:"review"`
+	ReviewPublished int64          `json:"review_published"`
+	StartedAt       sql.NullTime   `json:"started_at"`
+	FinishedAt      sql.NullTime   `json:"finished_at"`
+	AbandonedAt     sql.NullTime   `json:"abandoned_at"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	BookID2         int64          `json:"book_id_2"`
+	Source          string         `json:"source"`
+	SourceID        string         `json:"source_id"`
+	Isbn10          sql.NullString `json:"isbn_10"`
+	Isbn13          sql.NullString `json:"isbn_13"`
+	Title           string         `json:"title"`
+	Authors         string         `json:"authors"`
+	Description     sql.NullString `json:"description"`
+	CoverUrl        sql.NullString `json:"cover_url"`
+	PublishedDate   sql.NullString `json:"published_date"`
+	BookCreatedAt   time.Time      `json:"book_created_at"`
+	BookUpdatedAt   time.Time      `json:"book_updated_at"`
 }
 
-func (q *Queries) ListBooksByUser(ctx context.Context, userID int64) ([]ListBooksByUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, listBooksByUser, userID)
+func (q *Queries) ListLibraryItems(ctx context.Context, userID int64) ([]ListLibraryItemsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLibraryItems, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListBooksByUserRow
+	var items []ListLibraryItemsRow
 	for rows.Next() {
-		var i ListBooksByUserRow
+		var i ListLibraryItemsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Isbn,
-			&i.Title,
-			&i.Description,
-			&i.Author,
-			&i.ImageUrl,
-			&i.Progress,
-			&i.StartDate,
-			&i.FinishDate,
-			&i.Rating,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listUserBooks = `-- name: ListUserBooks :many
-SELECT user_id, book_id, start_date, progress, finish_date, rating, review FROM user_books WHERE user_id = ?
-`
-
-func (q *Queries) ListUserBooks(ctx context.Context, userID int64) ([]UserBook, error) {
-	rows, err := q.db.QueryContext(ctx, listUserBooks, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []UserBook
-	for rows.Next() {
-		var i UserBook
-		if err := rows.Scan(
 			&i.UserID,
 			&i.BookID,
-			&i.StartDate,
+			&i.Status,
 			&i.Progress,
-			&i.FinishDate,
 			&i.Rating,
+			&i.Notes,
 			&i.Review,
+			&i.ReviewPublished,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.AbandonedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.BookID2,
+			&i.Source,
+			&i.SourceID,
+			&i.Isbn10,
+			&i.Isbn13,
+			&i.Title,
+			&i.Authors,
+			&i.Description,
+			&i.CoverUrl,
+			&i.PublishedDate,
+			&i.BookCreatedAt,
+			&i.BookUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -271,52 +432,134 @@ func (q *Queries) ListUserBooks(ctx context.Context, userID int64) ([]UserBook, 
 	return items, nil
 }
 
-const updateBook = `-- name: UpdateBook :exec
-UPDATE books SET isbn = ?, title = ?, description = ?, author = ?, image_url = ? WHERE id = ?
+const updateLibraryItem = `-- name: UpdateLibraryItem :one
+UPDATE user_books SET
+    status = ?,
+    progress = ?,
+    rating = ?,
+    notes = ?,
+    review = ?,
+    review_published = ?,
+    started_at = ?,
+    finished_at = ?,
+    abandoned_at = ?,
+    updated_at = CURRENT_TIMESTAMP
+WHERE user_id = ? AND id = ?
+RETURNING id, user_id, book_id, status, progress, rating, notes, review, review_published, started_at, finished_at, abandoned_at, created_at, updated_at
 `
 
-type UpdateBookParams struct {
-	Isbn        string `json:"isbn"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Author      string `json:"author"`
-	ImageUrl    string `json:"image_url"`
-	ID          int64  `json:"id"`
+type UpdateLibraryItemParams struct {
+	Status          string         `json:"status"`
+	Progress        int64          `json:"progress"`
+	Rating          sql.NullInt64  `json:"rating"`
+	Notes           sql.NullString `json:"notes"`
+	Review          sql.NullString `json:"review"`
+	ReviewPublished int64          `json:"review_published"`
+	StartedAt       sql.NullTime   `json:"started_at"`
+	FinishedAt      sql.NullTime   `json:"finished_at"`
+	AbandonedAt     sql.NullTime   `json:"abandoned_at"`
+	UserID          int64          `json:"user_id"`
+	ID              int64          `json:"id"`
 }
 
-func (q *Queries) UpdateBook(ctx context.Context, arg UpdateBookParams) error {
-	_, err := q.db.ExecContext(ctx, updateBook,
-		arg.Isbn,
-		arg.Title,
-		arg.Description,
-		arg.Author,
-		arg.ImageUrl,
+func (q *Queries) UpdateLibraryItem(ctx context.Context, arg UpdateLibraryItemParams) (UserBook, error) {
+	row := q.db.QueryRowContext(ctx, updateLibraryItem,
+		arg.Status,
+		arg.Progress,
+		arg.Rating,
+		arg.Notes,
+		arg.Review,
+		arg.ReviewPublished,
+		arg.StartedAt,
+		arg.FinishedAt,
+		arg.AbandonedAt,
+		arg.UserID,
 		arg.ID,
 	)
-	return err
+	var i UserBook
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.BookID,
+		&i.Status,
+		&i.Progress,
+		&i.Rating,
+		&i.Notes,
+		&i.Review,
+		&i.ReviewPublished,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.AbandonedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
-const updateUserBook = `-- name: UpdateUserBook :exec
-UPDATE user_books SET progress = ? ,finish_date = ?, rating = ?, review = ? WHERE user_id = ? AND book_id = ?
+const upsertBookFromSource = `-- name: UpsertBookFromSource :one
+INSERT INTO books (
+    source,
+    source_id,
+    isbn_10,
+    isbn_13,
+    title,
+    authors,
+    description,
+    cover_url,
+    published_date,
+    updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(source, source_id) DO UPDATE SET
+    isbn_10 = excluded.isbn_10,
+    isbn_13 = excluded.isbn_13,
+    title = excluded.title,
+    authors = excluded.authors,
+    description = excluded.description,
+    cover_url = excluded.cover_url,
+    published_date = excluded.published_date,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING id, source, source_id, isbn_10, isbn_13, title, authors, description, cover_url, published_date, created_at, updated_at
 `
 
-type UpdateUserBookParams struct {
-	Progress   sql.NullInt64  `json:"progress"`
-	FinishDate sql.NullTime   `json:"finish_date"`
-	Rating     sql.NullInt64  `json:"rating"`
-	Review     sql.NullString `json:"review"`
-	UserID     int64          `json:"user_id"`
-	BookID     int64          `json:"book_id"`
+type UpsertBookFromSourceParams struct {
+	Source        string         `json:"source"`
+	SourceID      string         `json:"source_id"`
+	Isbn10        sql.NullString `json:"isbn_10"`
+	Isbn13        sql.NullString `json:"isbn_13"`
+	Title         string         `json:"title"`
+	Authors       string         `json:"authors"`
+	Description   sql.NullString `json:"description"`
+	CoverUrl      sql.NullString `json:"cover_url"`
+	PublishedDate sql.NullString `json:"published_date"`
 }
 
-func (q *Queries) UpdateUserBook(ctx context.Context, arg UpdateUserBookParams) error {
-	_, err := q.db.ExecContext(ctx, updateUserBook,
-		arg.Progress,
-		arg.FinishDate,
-		arg.Rating,
-		arg.Review,
-		arg.UserID,
-		arg.BookID,
+func (q *Queries) UpsertBookFromSource(ctx context.Context, arg UpsertBookFromSourceParams) (Book, error) {
+	row := q.db.QueryRowContext(ctx, upsertBookFromSource,
+		arg.Source,
+		arg.SourceID,
+		arg.Isbn10,
+		arg.Isbn13,
+		arg.Title,
+		arg.Authors,
+		arg.Description,
+		arg.CoverUrl,
+		arg.PublishedDate,
 	)
-	return err
+	var i Book
+	err := row.Scan(
+		&i.ID,
+		&i.Source,
+		&i.SourceID,
+		&i.Isbn10,
+		&i.Isbn13,
+		&i.Title,
+		&i.Authors,
+		&i.Description,
+		&i.CoverUrl,
+		&i.PublishedDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

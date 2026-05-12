@@ -2,3 +2,19 @@
 .env
 # ignore sqlite db
 backend/*.db
+
+# Playwright MCP output
+.playwright-mcp/
+
+# Design screenshots
+*.png
+
+# AI/dev planning docs
+DESIGN.md
+PRODUCT.md
+docs/
+.playwright-mcp/
+.cursor
+.vscode
+.claude
+.cursor/

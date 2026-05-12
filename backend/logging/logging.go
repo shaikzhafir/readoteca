@@ -11,7 +11,7 @@ var logger *slog.Logger
 
 func init() {
 	var file *os.File
-	logDir := "/opt/booktrackr/booktrackr.log"
+	logDir := "/opt/readoteca/readoteca.log"
 	if os.Getenv("PROD_LOG") == "true" {
 		var err error
 		file, err = os.OpenFile(logDir, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
