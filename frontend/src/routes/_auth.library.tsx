@@ -60,14 +60,16 @@ function LibraryPage() {
     return items.filter((item) => item.status === filter);
   }, [filter, items]);
 
-  const stats = useMemo(
-    () => ({
-      total: items.length,
-      reading: items.filter((item) => item.status === "reading").length,
-      finished: items.filter((item) => item.status === "finished").length,
-    }),
-    [items],
-  );
+  const stats = useMemo(() => {
+    const counts: Record<BookStatus, number> = {
+      want_to_read: 0,
+      reading: 0,
+      finished: 0,
+      abandoned: 0,
+    };
+    for (const item of items) counts[item.status] += 1;
+    return { total: items.length, byStatus: counts };
+  }, [items]);
 
   const librarySourceKeys = useMemo(
     () => new Set(items.map((item) => sourceKey(item.book.source, item.book.sourceId))),
@@ -84,15 +86,14 @@ function LibraryPage() {
     }
   }, [dedupedResults, selectedCatalogBook]);
 
-  const searchBooks = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!query.trim()) return;
+  const runSearch = async (q: string) => {
+    if (!q.trim()) return;
     setSearching(true);
     setSearchError(null);
     setSelectedCatalogBook(null);
     try {
       const data = await apiFetch<CatalogBook[]>(
-        `/books/search?q=${encodeURIComponent(query.trim())}`,
+        `/books/search?q=${encodeURIComponent(q.trim())}`,
       );
       setResults(data);
     } catch (err) {
@@ -100,6 +101,11 @@ function LibraryPage() {
     } finally {
       setSearching(false);
     }
+  };
+
+  const searchBooks = (event: React.FormEvent) => {
+    event.preventDefault();
+    void runSearch(query);
   };
 
   const addBook = async (book: CatalogBook) => {
@@ -165,7 +171,7 @@ function LibraryPage() {
           <h1 className="page-title">{screen === "library" ? "Library" : "Add books"}</h1>
           {screen === "library" && stats.total > 0 && (
             <p className="page-meta mt-2">
-              {stats.total} · {stats.reading} reading · {stats.finished} finished
+              {stats.total} {stats.total === 1 ? "book" : "books"}
             </p>
           )}
         </div>
@@ -194,7 +200,11 @@ function LibraryPage() {
             </button>
           </form>
           {searchError && (
-            <InlineError onDismiss={() => setSearchError(null)} className="-mt-6 mb-8 sm:max-w-xl">
+            <InlineError
+              onDismiss={() => setSearchError(null)}
+              onRetry={query.trim() ? () => void runSearch(query) : undefined}
+              className="-mt-6 mb-8 sm:max-w-xl"
+            >
               {searchError}
             </InlineError>
           )}
@@ -229,18 +239,26 @@ function LibraryPage() {
                   })}
                 </div>
                 {selectedCatalogBook && (
-                  <CatalogDetailPanel
-                    book={selectedCatalogBook}
-                    isInLibrary={librarySourceKeys.has(
-                      sourceKey(selectedCatalogBook.source, selectedCatalogBook.sourceId),
-                    )}
-                    isAdding={
-                      addingBookKey ===
-                      sourceKey(selectedCatalogBook.source, selectedCatalogBook.sourceId)
-                    }
-                    onAdd={() => void addBook(selectedCatalogBook)}
-                    onClose={() => setSelectedCatalogBook(null)}
-                  />
+                  <>
+                    <button
+                      type="button"
+                      className="detail-backdrop"
+                      aria-label="Close details"
+                      onClick={() => setSelectedCatalogBook(null)}
+                    />
+                    <CatalogDetailPanel
+                      book={selectedCatalogBook}
+                      isInLibrary={librarySourceKeys.has(
+                        sourceKey(selectedCatalogBook.source, selectedCatalogBook.sourceId),
+                      )}
+                      isAdding={
+                        addingBookKey ===
+                        sourceKey(selectedCatalogBook.source, selectedCatalogBook.sourceId)
+                      }
+                      onAdd={() => void addBook(selectedCatalogBook)}
+                      onClose={() => setSelectedCatalogBook(null)}
+                    />
+                  </>
                 )}
               </div>
             </div>
@@ -253,13 +271,17 @@ function LibraryPage() {
       ) : (
         <>
           {libraryError && (
-            <InlineError onDismiss={() => setLibraryError(null)} className="mb-4">
+            <InlineError
+              onDismiss={() => setLibraryError(null)}
+              onRetry={() => void loadLibrary()}
+              className="mb-4"
+            >
               {libraryError}
             </InlineError>
           )}
 
           <div className="mb-6 flex flex-wrap gap-1" role="tablist" aria-label="Filter library by status">
-            <FilterPill active={filter === "all"} onClick={() => setFilter("all")}>
+            <FilterPill active={filter === "all"} onClick={() => setFilter("all")} count={stats.total}>
               All
             </FilterPill>
             {statuses.map((status) => (
@@ -267,6 +289,7 @@ function LibraryPage() {
                 key={status.value}
                 active={filter === status.value}
                 onClick={() => setFilter(status.value)}
+                count={stats.byStatus[status.value]}
               >
                 {status.label}
               </FilterPill>
@@ -276,7 +299,11 @@ function LibraryPage() {
           {loading ? (
             <SkeletonGrid />
           ) : filteredItems.length === 0 ? (
-            <EmptyState filter={filter} onAddBooks={() => setScreen("add")} />
+            <EmptyState
+              filter={filter}
+              onAddBooks={() => setScreen("add")}
+              onShowAll={() => setFilter("all")}
+            />
           ) : (
             <div
               className={`grid gap-10 ${selected ? "lg:grid-cols-[minmax(0,1fr)_360px]" : ""}`}
@@ -294,15 +321,23 @@ function LibraryPage() {
                 ))}
               </div>
               {selected && (
-                <DetailPanel
-                  item={selected}
-                  saving={savingId === selected.id}
-                  error={detailError}
-                  onDismissError={() => setDetailError(null)}
-                  onPatch={patchItem}
-                  onRemove={removeItem}
-                  onClose={() => setSelected(null)}
-                />
+                <>
+                  <button
+                    type="button"
+                    className="detail-backdrop"
+                    aria-label="Close details"
+                    onClick={() => setSelected(null)}
+                  />
+                  <DetailPanel
+                    item={selected}
+                    saving={savingId === selected.id}
+                    error={detailError}
+                    onDismissError={() => setDetailError(null)}
+                    onPatch={patchItem}
+                    onRemove={removeItem}
+                    onClose={() => setSelected(null)}
+                  />
+                </>
               )}
             </div>
           )}
@@ -315,18 +350,27 @@ function LibraryPage() {
 function InlineError({
   children,
   onDismiss,
+  onRetry,
   className = "",
 }: {
   children: React.ReactNode;
   onDismiss: () => void;
+  onRetry?: () => void;
   className?: string;
 }) {
   return (
     <div className={`alert alert-error ${className}`} role="alert">
       <span>{children}</span>
-      <button type="button" className="btn btn-ghost" onClick={onDismiss}>
-        Dismiss
-      </button>
+      <div className="flex gap-1">
+        {onRetry && (
+          <button type="button" className="btn btn-ghost" onClick={onRetry}>
+            Retry
+          </button>
+        )}
+        <button type="button" className="btn btn-ghost" onClick={onDismiss}>
+          Dismiss
+        </button>
+      </div>
     </div>
   );
 }
@@ -339,10 +383,12 @@ function FilterPill({
   active,
   onClick,
   children,
+  count,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  count: number;
 }) {
   return (
     <button
@@ -352,7 +398,8 @@ function FilterPill({
       className={`btn ${active ? "btn-active" : "btn-ghost"}`}
       onClick={onClick}
     >
-      {children}
+      <span>{children}</span>
+      <span className="filter-pill-count">{count}</span>
     </button>
   );
 }
@@ -557,8 +604,10 @@ function CatalogDetailPanel({
   const asideRef = useRef<HTMLElement | null>(null);
   const bookKey = sourceKey(book.source, book.sourceId);
 
+  useLockBodyScrollOnMobile();
+
   useEffect(() => {
-    asideRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    scrollIntoViewIfNeeded(asideRef.current);
     closeRef.current?.focus({ preventScroll: true });
   }, [bookKey]);
 
@@ -572,54 +621,56 @@ function CatalogDetailPanel({
 
   return (
     <aside ref={asideRef} className="card catalog-panel detail-panel" aria-label={`${book.title} catalog details`}>
-      <div className="mb-4 flex items-baseline justify-between gap-3">
-        <h2 className="panel-title">{book.title}</h2>
+      <div className="detail-panel-body">
+        <div className="mb-4 flex items-baseline justify-between gap-3">
+          <h2 className="panel-title">{book.title}</h2>
+          <button
+            ref={closeRef}
+            type="button"
+            className="btn btn-ghost"
+            onClick={onClose}
+            aria-label="Close catalog details"
+          >
+            Close
+          </button>
+        </div>
+
+        <p className="book-author mb-5">{authorLabel(book.authors)}</p>
+
+        <dl className="catalog-panel-details">
+          {book.publishedDate && (
+            <div>
+              <dt>Published</dt>
+              <dd>{book.publishedDate}</dd>
+            </div>
+          )}
+          {(book.isbn13 || book.isbn10) && (
+            <div>
+              <dt>ISBN</dt>
+              <dd>{book.isbn13 ?? book.isbn10}</dd>
+            </div>
+          )}
+          <div>
+            <dt>Source</dt>
+            <dd>Google Books</dd>
+          </div>
+        </dl>
+
+        {book.description ? (
+          <p className="catalog-panel-description">{book.description}</p>
+        ) : (
+          <p className="page-meta mt-6">No catalog description available.</p>
+        )}
+
         <button
-          ref={closeRef}
           type="button"
-          className="btn btn-ghost"
-          onClick={onClose}
-          aria-label="Close catalog details"
+          className="btn btn-primary mt-6 w-full"
+          onClick={onAdd}
+          disabled={isInLibrary || isAdding}
         >
-          Close
+          {isAdding ? "Adding…" : isInLibrary ? "Already in library" : "Add to library"}
         </button>
       </div>
-
-      <p className="book-author mb-5">{authorLabel(book.authors)}</p>
-
-      <dl className="catalog-panel-details">
-        {book.publishedDate && (
-          <div>
-            <dt>Published</dt>
-            <dd>{book.publishedDate}</dd>
-          </div>
-        )}
-        {(book.isbn13 || book.isbn10) && (
-          <div>
-            <dt>ISBN</dt>
-            <dd>{book.isbn13 ?? book.isbn10}</dd>
-          </div>
-        )}
-        <div>
-          <dt>Source</dt>
-          <dd>Google Books</dd>
-        </div>
-      </dl>
-
-      {book.description ? (
-        <p className="catalog-panel-description">{book.description}</p>
-      ) : (
-        <p className="page-meta mt-6">No catalog description available.</p>
-      )}
-
-      <button
-        type="button"
-        className="btn btn-primary mt-6 w-full"
-        onClick={onAdd}
-        disabled={isInLibrary || isAdding}
-      >
-        {isAdding ? "Adding…" : isInLibrary ? "Already in library" : "Add to library"}
-      </button>
     </aside>
   );
 }
@@ -652,9 +703,11 @@ function SkeletonGrid() {
 function EmptyState({
   filter,
   onAddBooks,
+  onShowAll,
 }: {
   filter: BookStatus | "all";
   onAddBooks: () => void;
+  onShowAll: () => void;
 }) {
   if (filter === "all") {
     return (
@@ -668,9 +721,12 @@ function EmptyState({
   }
   const label = statuses.find((s) => s.value === filter)?.label ?? "this status";
   return (
-    <p className="page-meta" style={{ marginTop: "2rem" }}>
-      Nothing in <span style={{ textTransform: "lowercase" }}>{label}</span>.
-    </p>
+    <div className="empty-state">
+      <p className="page-meta">Nothing in <span className="lowercase">{label}</span>.</p>
+      <button type="button" className="btn btn-ghost" onClick={onShowAll}>
+        Show all
+      </button>
+    </div>
   );
 }
 
@@ -700,6 +756,9 @@ function DetailPanel({
   const itemIdRef = useRef(item.id);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const asideRef = useRef<HTMLElement | null>(null);
+  const lastPatchRef = useRef<Record<string, unknown> | null>(null);
+
+  useLockBodyScrollOnMobile();
 
   useEffect(() => {
     itemIdRef.current = item.id;
@@ -708,6 +767,7 @@ function DetailPanel({
     setProgressDraft(item.progress);
     setConfirmRemove(false);
     setSavedAt(null);
+    lastPatchRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id]);
 
@@ -719,11 +779,16 @@ function DetailPanel({
     async (body: Record<string, unknown>) => {
       const targetId = item.id;
       if (itemIdRef.current !== targetId) return;
+      lastPatchRef.current = body;
       await onPatch(targetId, body);
       if (itemIdRef.current === targetId) setSavedAt(new Date());
     },
     [item.id, onPatch],
   );
+
+  const retryLastPatch = lastPatchRef.current
+    ? () => void patchField(lastPatchRef.current as Record<string, unknown>)
+    : undefined;
 
   useEffect(() => {
     if (notes === (item.notes ?? "")) return;
@@ -750,7 +815,7 @@ function DetailPanel({
   }, [progressDraft, item.progress, patchField]);
 
   useEffect(() => {
-    asideRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    scrollIntoViewIfNeeded(asideRef.current);
     closeRef.current?.focus({ preventScroll: true });
   }, [item.id]);
 
@@ -766,30 +831,31 @@ function DetailPanel({
 
   return (
     <aside ref={asideRef} className="card detail-panel" aria-label={`${item.book.title} details`}>
-      <div className="mb-4 flex items-baseline justify-between gap-3">
-        <h2 className="panel-title">{item.book.title}</h2>
-        <button
-          ref={closeRef}
-          type="button"
-          className="btn btn-ghost"
-          onClick={onClose}
-          aria-label="Close details"
-        >
-          Close
-        </button>
-      </div>
-      <p className="book-author mb-5">{authorLabel(item.book.authors)}</p>
+      <div className="detail-panel-body">
+        <div className="mb-4 flex items-baseline justify-between gap-3">
+          <h2 className="panel-title">{item.book.title}</h2>
+          <button
+            ref={closeRef}
+            type="button"
+            className="btn btn-ghost"
+            onClick={onClose}
+            aria-label="Close details"
+          >
+            Close
+          </button>
+        </div>
+        <p className="book-author mb-5">{authorLabel(item.book.authors)}</p>
 
-      <p
-        className="page-meta mb-5"
-        aria-live="polite"
-        style={{ minHeight: "1rem" }}
-      >
+      <p className="page-meta mb-5 min-h-4" aria-live="polite">
         {saveStatus}
       </p>
 
       {error && (
-        <InlineError onDismiss={onDismissError} className="mb-4">
+        <InlineError
+          onDismiss={onDismissError}
+          onRetry={retryLastPatch}
+          className="mb-4"
+        >
           {error}
         </InlineError>
       )}
@@ -857,8 +923,7 @@ function DetailPanel({
         </label>
         <textarea
           id={`notes-${item.id}`}
-          className="form-input"
-          style={{ minHeight: "5rem" }}
+          className="form-input min-h-20"
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           placeholder="Only you see these."
@@ -871,8 +936,7 @@ function DetailPanel({
         </label>
         <textarea
           id={`review-${item.id}`}
-          className="form-input"
-          style={{ minHeight: "5rem" }}
+          className="form-input min-h-20"
           value={review}
           onChange={(event) => setReview(event.target.value)}
           placeholder="Saved as draft."
@@ -909,6 +973,7 @@ function DetailPanel({
           </button>
         )}
       </div>
+      </div>
     </aside>
   );
 }
@@ -917,7 +982,10 @@ function formatRelative(date: Date) {
   const seconds = Math.round((Date.now() - date.getTime()) / 1000);
   if (seconds < 5) return "just now";
   if (seconds < 60) return `${seconds}s ago`;
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h ago`;
 }
 
 function clampProgress(value: number) {
@@ -957,4 +1025,25 @@ function dedupeCatalogBooks(books: CatalogBook[]) {
 
 function normaliseBookText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function scrollIntoViewIfNeeded(el: HTMLElement | null) {
+  if (!el) return;
+  if (window.getComputedStyle(el).position === "fixed") return;
+  const rect = el.getBoundingClientRect();
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  if (rect.top >= 0 && rect.bottom <= viewportHeight) return;
+  el.scrollIntoView({ block: "nearest", behavior: "auto" });
+}
+
+function useLockBodyScrollOnMobile() {
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    if (!mq.matches) return;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = original;
+    };
+  }, []);
 }
