@@ -125,9 +125,20 @@ function LibraryPage() {
     }
   };
 
-  const patchItem = async (id: number, body: Record<string, unknown>) => {
+  const patchItem = useCallback(async (id: number, body: Record<string, unknown>) => {
     setSavingId(id);
     setDetailError(null);
+    let snapshot: LibraryItem | undefined;
+    setItems((current) =>
+      current.map((item) => {
+        if (item.id !== id) return item;
+        snapshot = item;
+        return { ...item, ...body } as LibraryItem;
+      }),
+    );
+    setSelected((current) =>
+      current?.id === id ? ({ ...current, ...body } as LibraryItem) : current,
+    );
     try {
       const updated = await apiFetch<LibraryItem>(`/library/${id}`, {
         method: "PATCH",
@@ -136,13 +147,18 @@ function LibraryPage() {
       setItems((current) => current.map((item) => (item.id === id ? updated : item)));
       setSelected((current) => (current?.id === id ? updated : current));
     } catch (err) {
+      if (snapshot) {
+        const prior = snapshot;
+        setItems((current) => current.map((item) => (item.id === id ? prior : item)));
+        setSelected((current) => (current?.id === id ? prior : current));
+      }
       setDetailError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSavingId(null);
     }
-  };
+  }, []);
 
-  const removeItem = async (id: number) => {
+  const removeItem = useCallback(async (id: number) => {
     setSavingId(id);
     setDetailError(null);
     try {
@@ -154,7 +170,7 @@ function LibraryPage() {
     } finally {
       setSavingId(null);
     }
-  };
+  }, []);
 
   const selectCatalogBook = (book: CatalogBook) => {
     const bookKey = sourceKey(book.source, book.sourceId);
@@ -316,7 +332,6 @@ function LibraryPage() {
                     isSelected={selected?.id === item.id}
                     isSaving={savingId === item.id}
                     onSelect={() => setSelected(item)}
-                    onProgress={(progress) => void patchItem(item.id, { progress })}
                   />
                 ))}
               </div>
@@ -430,41 +445,12 @@ function LibraryCard({
   isSelected,
   isSaving,
   onSelect,
-  onProgress,
 }: {
   item: LibraryItem;
   isSelected: boolean;
   isSaving: boolean;
   onSelect: () => void;
-  onProgress: (progress: number) => void;
 }) {
-  const trackRef = useRef<HTMLDivElement | null>(null);
-
-  const setProgressFromEvent = (clientX: number) => {
-    const track = trackRef.current;
-    if (!track) return;
-    const rect = track.getBoundingClientRect();
-    const ratio = (clientX - rect.left) / rect.width;
-    const next = Math.round(Math.min(1, Math.max(0, ratio)) * 100);
-    if (next !== item.progress) onProgress(next);
-  };
-
-  const handleKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "ArrowRight" || event.key === "ArrowUp") {
-      event.preventDefault();
-      onProgress(Math.min(100, item.progress + 5));
-    } else if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
-      event.preventDefault();
-      onProgress(Math.max(0, item.progress - 5));
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      onProgress(0);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      onProgress(100);
-    }
-  };
-
   return (
     <div
       className={`book-card ${isSelected ? "is-selected" : ""}`}
@@ -485,35 +471,9 @@ function LibraryCard({
       <div className="book-meta">
         <h3 className="book-title">{item.book.title}</h3>
         <p className="book-author">{authorLabel(item.book.authors)}</p>
-        <div className="mt-1 flex items-baseline justify-between gap-2">
+        <div className="mt-2 flex items-baseline justify-between gap-2">
           <StatusChip status={item.status} />
           <span className="book-progress-text">{item.progress}%</span>
-        </div>
-        <div
-          ref={trackRef}
-          className="progress-track mt-1"
-          role="slider"
-          tabIndex={0}
-          aria-label={`${item.book.title} reading progress, click track or use arrow keys to set`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={item.progress}
-          aria-busy={isSaving}
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            setProgressFromEvent(event.clientX);
-          }}
-          onPointerMove={(event) => {
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-              setProgressFromEvent(event.clientX);
-            }
-          }}
-          onKeyDown={handleKey}
-        >
-          <div
-            className="progress-fill"
-            style={{ transform: `scaleX(${item.progress / 100})` }}
-          />
         </div>
       </div>
     </div>
@@ -771,10 +731,6 @@ function DetailPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id]);
 
-  useEffect(() => {
-    setProgressDraft(item.progress);
-  }, [item.id, item.progress]);
-
   const patchField = useCallback(
     async (body: Record<string, unknown>) => {
       const targetId = item.id;
@@ -806,12 +762,9 @@ function DetailPanel({
     return () => clearTimeout(handle);
   }, [review, item.review, patchField]);
 
-  useEffect(() => {
+  const commitProgress = useCallback(() => {
     if (progressDraft === item.progress) return;
-    const handle = setTimeout(() => {
-      void patchField({ progress: progressDraft });
-    }, 350);
-    return () => clearTimeout(handle);
+    void patchField({ progress: progressDraft });
   }, [progressDraft, item.progress, patchField]);
 
   useEffect(() => {
@@ -882,12 +835,19 @@ function DetailPanel({
           <input
             id={`progress-${item.id}`}
             className="form-input progress-number"
-            type="number"
-            min={0}
-            max={100}
-            step={1}
-            value={progressDraft}
-            onChange={(event) => setProgressDraft(clampProgress(Number(event.target.value)))}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={3}
+            value={String(progressDraft)}
+            onChange={(event) => setProgressDraft(sanitizeProgress(event.target.value))}
+            onBlur={commitProgress}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
+            }}
             aria-label={`${item.book.title} progress, percent`}
           />
           <span className="field-suffix-unit" aria-hidden="true">
@@ -988,9 +948,12 @@ function formatRelative(date: Date) {
   return `${hours}h ago`;
 }
 
-function clampProgress(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(100, Math.max(0, Math.round(value)));
+function sanitizeProgress(raw: string) {
+  const digits = raw.replace(/\D/g, "");
+  if (digits === "") return 0;
+  const n = parseInt(digits, 10);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, n));
 }
 
 function authorLabel(authors: string[] | null | undefined) {
