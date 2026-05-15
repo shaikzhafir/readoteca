@@ -152,11 +152,11 @@ func TestLibraryAddListPatchAndDelete(t *testing.T) {
 	if err := json.NewDecoder(patchRes.Body).Decode(&patched); err != nil {
 		t.Fatal(err)
 	}
-	if patched.Status != api.Finished || patched.Progress != 100 || patched.FinishedAt == nil {
-		t.Fatalf("expected finished with timestamp, got %#v", patched)
+	if patched.Status != api.WantToRead || patched.Progress != 100 {
+		t.Fatalf("expected progress update without status change, got %#v", patched)
 	}
 
-	statusReq := httptest.NewRequest(http.MethodPatch, "/library/1", strings.NewReader(`{"status":"want_to_read"}`))
+	statusReq := httptest.NewRequest(http.MethodPatch, "/library/1", strings.NewReader(`{"status":"finished"}`))
 	statusReq.Header.Set("Content-Type", "application/json")
 	statusReq.AddCookie(&http.Cookie{Name: app.cfg.SessionCookieName, Value: sessionID})
 	statusRes := httptest.NewRecorder()
@@ -165,12 +165,29 @@ func TestLibraryAddListPatchAndDelete(t *testing.T) {
 	if statusRes.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", statusRes.Code, statusRes.Body.String())
 	}
-	var reset api.LibraryItem
-	if err := json.NewDecoder(statusRes.Body).Decode(&reset); err != nil {
+	var finished api.LibraryItem
+	if err := json.NewDecoder(statusRes.Body).Decode(&finished); err != nil {
 		t.Fatal(err)
 	}
-	if reset.Status != api.WantToRead || reset.Progress != 0 {
-		t.Fatalf("expected want_to_read with zero progress, got %#v", reset)
+	if finished.Status != api.Finished || finished.Progress != 100 || finished.FinishedAt == nil {
+		t.Fatalf("expected finished status with preserved progress and timestamp, got %#v", finished)
+	}
+
+	resetReq := httptest.NewRequest(http.MethodPatch, "/library/1", strings.NewReader(`{"status":"want_to_read"}`))
+	resetReq.Header.Set("Content-Type", "application/json")
+	resetReq.AddCookie(&http.Cookie{Name: app.cfg.SessionCookieName, Value: sessionID})
+	resetRes := httptest.NewRecorder()
+	app.handler.ServeHTTP(resetRes, resetReq)
+
+	if resetRes.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resetRes.Code, resetRes.Body.String())
+	}
+	var reset api.LibraryItem
+	if err := json.NewDecoder(resetRes.Body).Decode(&reset); err != nil {
+		t.Fatal(err)
+	}
+	if reset.Status != api.WantToRead || reset.Progress != 100 {
+		t.Fatalf("expected status change without resetting progress, got %#v", reset)
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/library", nil)

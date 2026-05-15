@@ -383,7 +383,6 @@ type editableLibraryState struct {
 
 func (s *editableLibraryState) Apply(patch api.PatchLibraryItemRequest) error {
 	now := time.Now()
-	hasStatusPatch := patch.Status != nil
 	if patch.Status != nil {
 		s.Status = string(*patch.Status)
 	}
@@ -409,24 +408,13 @@ func (s *editableLibraryState) Apply(patch api.PatchLibraryItemRequest) error {
 		s.ReviewPublished = *patch.ReviewPublished
 	}
 
-	if !hasStatusPatch {
-		if s.Progress == 100 {
-			s.Status = string(api.Finished)
-		}
-		if s.Progress > 0 && s.Progress < 100 && s.Status == string(api.WantToRead) {
-			s.Status = string(api.Reading)
-		}
-	}
-
 	switch s.Status {
 	case string(api.WantToRead):
-		s.Progress = 0
 	case string(api.Reading):
 		if !s.StartedAt.Valid {
 			s.StartedAt = sql.NullTime{Time: now, Valid: true}
 		}
 	case string(api.Finished):
-		s.Progress = 100
 		if !s.FinishedAt.Valid {
 			s.FinishedAt = sql.NullTime{Time: now, Valid: true}
 		}
